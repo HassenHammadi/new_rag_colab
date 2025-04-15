@@ -1,0 +1,394 @@
+====================================================
+HOW TO USE THE RAG SYSTEM IN GOOGLE COLAB
+====================================================
+
+This document explains how to use the RAG (Retrieval-Augmented Generation) system
+in Google Colab with Google Drive integration for persistent storage.
+
+Table of Contents:
+1. System Overview
+2. Getting Started
+3. Processing Your Data
+4. Saving and Loading Vector Stores
+5. Querying the System
+6. Advanced Usage
+7. Troubleshooting
+
+====================================================
+1. SYSTEM OVERVIEW
+====================================================
+
+The RAG Colab system allows you to:
+- Process multiple file formats (PDF, text, JSON, CSV)
+- Create a searchable vector database from your documents
+- Store vector stores in Google Drive for persistence between sessions
+- Query across all your data with natural language
+- Use free resources like Hugging Face models or OpenRouter API
+- Get responses formatted in Markdown
+
+Supported file formats:
+- PDF files (.pdf)
+- Text files (.txt, .md, .rst)
+- JSON files (.json)
+- CSV files (.csv)
+
+====================================================
+2. GETTING STARTED
+====================================================
+
+Step 1: Open a Notebook in Google Colab
+---------------------------------------
+Open one of the provided notebooks in Google Colab:
+- rag_with_drive.ipynb: Comprehensive notebook with all features
+- quick_start.ipynb: Simplified notebook for quick setup
+
+Step 2: Install Dependencies
+---------------------------
+Run the installation cell in the notebook:
+
+```python
+!pip install faiss-cpu sentence-transformers transformers torch tqdm requests python-dotenv
+```
+
+Step 3: Clone the Repository
+---------------------------
+Clone the repository and add it to the Python path:
+
+```python
+!git clone https://github.com/yourusername/new_rag_colab.git
+import sys
+sys.path.append('/content/new_rag_colab')
+```
+
+Step 4: Mount Google Drive
+-------------------------
+Mount Google Drive to enable persistent storage:
+
+```python
+from new_rag_colab.utils.drive_utils import DriveHandler
+
+# Create a Drive handler
+drive_handler = DriveHandler(base_folder="RAG_vector_stores")
+
+# Mount Google Drive
+drive_handler.mount_drive()
+```
+
+Step 5: Create the RAG Pipeline
+-----------------------------
+Set up the RAG pipeline with all necessary components:
+
+```python
+from new_rag_colab.processors.pdf_processor import PDFProcessor
+from new_rag_colab.processors.text_processor import TextProcessor
+from new_rag_colab.chunkers.base_chunker import FixedSizeChunker
+from new_rag_colab.utils.embeddings import HuggingFaceEmbeddingProvider
+from new_rag_colab.vector_stores.drive_vector_store import DriveVectorStore
+from new_rag_colab.retrievers.base_retriever import SimpleRetriever
+from new_rag_colab.utils.colab_rag_pipeline import ColabRAGPipeline
+
+# Create components
+embedding_provider = HuggingFaceEmbeddingProvider(model_name="sentence-transformers/all-MiniLM-L6-v2")
+vector_store = DriveVectorStore(embedding_function=embedding_provider.get_embedding, dimension=384)
+chunker = FixedSizeChunker(chunk_size=1000, chunk_overlap=200)
+retriever = SimpleRetriever(vector_store)
+
+# Create processors
+processors = {
+    "pdf": PDFProcessor(),
+    "text": TextProcessor(),
+    "json": JSONProcessor(),
+    "csv": CSVProcessor()
+}
+
+# Create the RAG pipeline
+rag_pipeline = ColabRAGPipeline(
+    chunker=chunker,
+    vector_store=vector_store,
+    retriever=retriever,
+    processors=processors,
+    drive_handler=drive_handler
+)
+```
+
+====================================================
+3. PROCESSING YOUR DATA
+====================================================
+
+Step 1: Upload Files
+-------------------
+Use the Colab file upload widget to upload your files:
+
+```python
+from google.colab import files
+
+print("Upload your files (PDF, TXT, JSON, CSV):")
+uploaded = files.upload()
+```
+
+Step 2: Process Files
+--------------------
+Process the uploaded files:
+
+```python
+# Process uploaded files
+for filename in uploaded.keys():
+    print(f"Processing {filename}...")
+    doc_ids = rag_pipeline.process_file(filename)
+    print(f"Added {len(doc_ids)} chunks from {filename}")
+```
+
+Alternative: Process Files from Google Drive
+-------------------------------------------
+If your files are already in Google Drive:
+
+```python
+# Path to files in Google Drive
+drive_files_path = "/content/drive/MyDrive/your_documents_folder"
+
+# Process all files in the directory
+import os
+from pathlib import Path
+
+for filename in os.listdir(drive_files_path):
+    file_path = Path(drive_files_path) / filename
+    print(f"Processing {filename}...")
+    doc_ids = rag_pipeline.process_file(file_path)
+    print(f"Added {len(doc_ids)} chunks from {filename}")
+```
+
+====================================================
+4. SAVING AND LOADING VECTOR STORES
+====================================================
+
+Saving Vector Store to Google Drive
+----------------------------------
+Save your vector store to Google Drive for persistence:
+
+```python
+import tempfile
+from pathlib import Path
+
+# Create a temporary directory
+temp_dir = tempfile.mkdtemp()
+vector_store_path = Path(temp_dir) / "vector_store"
+
+# Save the vector store to disk and Google Drive
+print("Saving vector store to Google Drive...")
+rag_pipeline.save_vector_store(vector_store_path, drive_subfolder="my_vector_store")
+print("Vector store saved to Google Drive.")
+```
+
+Loading Vector Store from Google Drive
+------------------------------------
+In a future session, load your vector store from Google Drive:
+
+```python
+# Create a temporary directory
+temp_dir = tempfile.mkdtemp()
+vector_store_path = Path(temp_dir) / "loaded_vector_store"
+
+# Load the vector store from Google Drive
+print("Loading vector store from Google Drive...")
+rag_pipeline.load_vector_store(vector_store_path, from_drive=True, drive_path="my_vector_store")
+print("Vector store loaded from Google Drive.")
+```
+
+Listing Available Vector Stores
+-----------------------------
+List all vector stores saved in Google Drive:
+
+```python
+# List available vector stores
+vector_stores = rag_pipeline.list_drive_vector_stores()
+print("Available vector stores in Google Drive:")
+for store in vector_stores:
+    print(f"- {store}")
+```
+
+====================================================
+5. QUERYING THE SYSTEM
+====================================================
+
+Basic Query
+----------
+Query the system and get raw results:
+
+```python
+# Query the system
+results = rag_pipeline.query("What is machine learning?")
+
+# Print the results
+print(f"Found {len(results)} results:")
+for i, result in enumerate(results):
+    print(f"\nResult {i+1} (score: {result.get('score', 0):.4f}):")
+    print(f"Source: {result.get('metadata', {}).get('source_file', 'unknown')}")
+    print(result.get("content", "")[:300] + "...")
+```
+
+Markdown-Formatted Query
+----------------------
+Get a nicely formatted Markdown response:
+
+```python
+# Get markdown response
+markdown_response = rag_pipeline.query_with_markdown("What is machine learning?")
+
+# Display the response
+from IPython.display import Markdown
+display(Markdown(markdown_response.replace("```markdown\n", "").replace("\n```", "")))
+```
+
+Interactive Query Interface
+-------------------------
+Create an interactive query interface:
+
+```python
+from ipywidgets import widgets
+from IPython.display import display, clear_output
+
+# Create widgets
+query_input = widgets.Text(
+    placeholder='Enter your query here',
+    description='Query:',
+    layout=widgets.Layout(width='80%')
+)
+submit_button = widgets.Button(
+    description='Submit',
+    button_style='primary'
+)
+output = widgets.Output()
+
+# Define callback
+def on_submit(b):
+    with output:
+        clear_output()
+        if query_input.value.strip():
+            # Get markdown response
+            markdown_response = rag_pipeline.query_with_markdown(query_input.value)
+            
+            # Display the response
+            from IPython.display import Markdown
+            display(Markdown(markdown_response.replace("```markdown\n", "").replace("\n```", "")))
+        else:
+            print("Please enter a query.")
+
+# Register callback
+submit_button.on_click(on_submit)
+
+# Display widgets
+display(widgets.HBox([query_input, submit_button]))
+display(output)
+```
+
+====================================================
+6. ADVANCED USAGE
+====================================================
+
+Using Different Embedding Models
+------------------------------
+You can use different embedding models:
+
+```python
+# Use a different Hugging Face model
+embedding_provider = HuggingFaceEmbeddingProvider(
+    model_name="sentence-transformers/all-mpnet-base-v2",
+    use_cache=True
+)
+
+# Or use OpenRouter API
+from new_rag_colab.utils.embeddings import OpenRouterEmbeddingProvider
+embedding_provider = OpenRouterEmbeddingProvider(model="openai/text-embedding-3-small")
+```
+
+Using Advanced Chunking Strategies
+--------------------------------
+Try different chunking strategies:
+
+```python
+from new_rag_colab.chunkers.advanced_chunker import ContextualHeaderChunker
+
+# Create a base chunker
+base_chunker = FixedSizeChunker(chunk_size=1000, chunk_overlap=200)
+
+# Wrap it with a contextual header chunker
+chunker = ContextualHeaderChunker(base_chunker)
+```
+
+Using Advanced Retrieval Methods
+------------------------------
+Use more advanced retrieval methods:
+
+```python
+from new_rag_colab.retrievers.advanced_retriever import QueryTransformationRetriever
+
+# Create a base retriever
+base_retriever = SimpleRetriever(vector_store)
+
+# Wrap it with a query transformation retriever
+retriever = QueryTransformationRetriever(base_retriever)
+```
+
+Parallel Processing
+-----------------
+Process multiple files in parallel:
+
+```python
+# Process a directory with parallel processing
+results = rag_pipeline.process_directory(directory_path, parallel=True, max_workers=4)
+```
+
+====================================================
+7. TROUBLESHOOTING
+====================================================
+
+Common Issues:
+
+1. "ModuleNotFoundError" when importing modules
+   - Make sure you've cloned the repository and added it to the Python path
+   - Check that all dependencies are installed
+
+2. "Google Drive not mounted" error
+   - Make sure you've authorized access to Google Drive
+   - Try running the mount_drive() method again
+
+3. "File not found" when loading from Google Drive
+   - Check that the vector store name is correct
+   - Verify that the vector store exists in your Google Drive
+
+4. Out of memory errors
+   - Reduce the batch size for processing
+   - Use a smaller embedding model
+   - Process fewer files at once
+
+5. Slow processing
+   - Enable caching for embeddings and queries
+   - Use parallel processing for multiple files
+   - Save intermediate results to Google Drive
+
+Debugging:
+
+1. Enable debug logging:
+   ```python
+   import logging
+   logging.basicConfig(level=logging.DEBUG)
+   ```
+
+2. Check vector store contents:
+   ```python
+   print(f"Vector store contains {len(rag_pipeline.vector_store.documents)} documents")
+   ```
+
+3. Inspect document metadata:
+   ```python
+   for i, doc in enumerate(rag_pipeline.vector_store.documents[:5]):
+       print(f"Document {i}: {doc['metadata']}")
+   ```
+
+4. Test embedding generation:
+   ```python
+   test_embedding = embedding_provider.get_embedding("Test sentence")
+   print(f"Embedding dimension: {len(test_embedding)}")
+   ```
+
+For more help, refer to the documentation or open an issue on the GitHub repository.

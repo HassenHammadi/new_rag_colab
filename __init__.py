@@ -1,0 +1,1 @@
+"""Colab-compatible RAG system."""
